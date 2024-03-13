@@ -915,6 +915,7 @@ class StableDiffusionPipeline(
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
 
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+            print("awaa")
             image_embeds = self.prepare_ip_adapter_image_embeds(
                 ip_adapter_image,
                 ip_adapter_image_embeds,
@@ -928,6 +929,9 @@ class StableDiffusionPipeline(
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
+        print(generator)
+        print(num_channels_latents)
+        print(latents )
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,
             num_channels_latents,
@@ -960,6 +964,8 @@ class StableDiffusionPipeline(
         # 7. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
+        print(num_warmup_steps)
+        print(timestep_cond)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
@@ -1008,6 +1014,7 @@ class StableDiffusionPipeline(
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
+        print(latents.shape)
 
         if not output_type == "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
@@ -1022,8 +1029,11 @@ class StableDiffusionPipeline(
             do_denormalize = [True] * image.shape[0]
         else:
             do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
+        
+        print(latents.shape)
 
         image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
+        print(type(image))
 
         # Offload all models
         self.maybe_free_model_hooks()

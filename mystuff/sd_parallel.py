@@ -2,7 +2,7 @@ from diffusers import StableDiffusionPipeline
 import torch
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from pathlib import Path
-Path("./images/batched").mkdir(parents=True, exist_ok=True)
+Path("./images/parallel").mkdir(parents=True, exist_ok=True)
 
 torch.manual_seed(0)
 
@@ -20,6 +20,7 @@ def run(prompt, n_prompt):
     num_inference_steps = 16
     output_type = "pil"
     pipe._guidance_scale = 7.5
+
 
     pipe.check_inputs(
         prompt,
@@ -48,7 +49,7 @@ def run(prompt, n_prompt):
     prompt_embeds, negative_prompt_embeds = pipe.encode_prompt(
         prompt,
         device,
-        num_images_per_prompt,
+        1,
         pipe._guidance_scale > 1 and pipe.unet.config.time_cond_proj_dim is None,
         n_prompt,
         prompt_embeds=None,
@@ -56,13 +57,15 @@ def run(prompt, n_prompt):
         lora_scale=None,
         clip_skip=None,
         )
+    
+    print(prompt_embeds.shape)
 
     if pipe.do_classifier_free_guidance:
         prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
 
     print(pipe.unet.config.in_channels)
     latents = pipe.prepare_latents(
-        batch_size * num_images_per_prompt,
+        batch_size * 1,
         pipe.unet.config.in_channels,
         height,
         width,
@@ -88,6 +91,7 @@ def run(prompt, n_prompt):
             latent_model_input = torch.cat([latents] * 2) if pipe.do_classifier_free_guidance else latents
             latent_model_input = pipe.scheduler.scale_model_input(latent_model_input, t)
 
+            print("here", latent_model_input.shape, prompt_embeds.shape)
             # predict the noise residual
             noise_pred = pipe.unet(
                 latent_model_input,
@@ -99,6 +103,7 @@ def run(prompt, n_prompt):
                 return_dict=False,
             )[0]
 
+            print("there")
             # perform guidance
             if pipe.do_classifier_free_guidance:
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
@@ -106,11 +111,24 @@ def run(prompt, n_prompt):
 
             latents = pipe.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
 
+
+            if latents.size(0) < num_images_per_prompt:
+                print(latents.shape, prompt_embeds.shape, num_images_per_prompt)
+                # latents = latents.repeat(2, 1, 1, 1)
+                latents = latents.repeat(2, 1, 1, 1)
+                prompt_embeds = torch.repeat_interleave(prompt_embeds, 2, dim=0)
+
+                new_first_dim = min(latents.size(0), num_images_per_prompt)
+                
+                latents = latents[:new_first_dim]   
+                prompt_embeds = prompt_embeds[:new_first_dim*2]
+                # print("new", latents.shape, prompt_embeds.shape, new_first_dim)
+
             # call the callback, if provided
             if i == len(timesteps) - 1 or (i + 1) % pipe.scheduler.order == 0:
                 progress_bar.update()
+            
 
-    print("here", latents.shape)
     image = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False, generator=None)[0]
 
     image = pipe.image_processor.postprocess(image, output_type=output_type, do_denormalize=[True] * image.shape[0])
@@ -126,6 +144,6 @@ def run(prompt, n_prompt):
 images = run("a photo of an astronaut riding a horse on mars", None).images
 counter = 0
 for i in images:
-    i.save("./images/batched/astronaut_rides_horse{}.png".format(counter))
+    i.save("./images/parallel/astronaut_rides_horse{}.png".format(counter))
     counter += 1
     

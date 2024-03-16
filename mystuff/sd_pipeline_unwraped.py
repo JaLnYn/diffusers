@@ -10,13 +10,12 @@ pipe = pipe.to("cuda")
 
 @torch.no_grad()
 def run(prompt, n_prompt):
-
     batch_size = 1
     num_images_per_prompt = 1
     width = pipe.unet.config.sample_size * pipe.vae_scale_factor
     height = pipe.unet.config.sample_size * pipe.vae_scale_factor 
     device = pipe._execution_device
-    num_inference_steps = 20
+    num_inference_steps = 8
     output_type = "pil"
     pipe._guidance_scale = 7.5
 

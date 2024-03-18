@@ -12,6 +12,32 @@ pipe = pipe.to("cuda")
 
 @torch.no_grad()
 def run(prompt, n_prompt):
+
+    # adding noise based on the plms 
+    def add_noise(scheduler, sample, timestep, noise):
+
+        prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
+
+        alpha_prod_t = scheduler.alphas_cumprod[timestep]
+        alpha_prod_t_prev = scheduler.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else scheduler.final_alpha_cumprod
+
+        beta_prod_t = 1 - alpha_prod_t
+        beta_prod_t_prev = 1 - alpha_prod_t_prev
+
+        sample_coeff = (alpha_prod_t_prev / alpha_prod_t) ** (0.5)
+
+        # corresponds to denominator of e_θ(x_t, t) in formula (9)
+        model_output_denom_coeff = alpha_prod_t * beta_prod_t_prev ** (0.5) + (
+            alpha_prod_t * beta_prod_t * alpha_prod_t_prev
+        ) ** (0.5)
+
+        # full formula (9)
+        prev_sample = (
+            sample + 0.1*(alpha_prod_t_prev - alpha_prod_t) * noise / model_output_denom_coeff
+        )
+
+        return prev_sample
+
     batch_size = 1
     num_images_per_prompt = 8
     width = pipe.unet.config.sample_size * pipe.vae_scale_factor
@@ -109,6 +135,18 @@ def run(prompt, n_prompt):
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                 noise_pred = noise_pred_uncond + pipe.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
+
+            latents = add_noise(pipe.scheduler, latents, t, pipe.prepare_latents(
+                latents.size(0),
+                pipe.unet.config.in_channels,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                None,
+                None,
+            ))
+
             latents = pipe.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
 
 
@@ -121,6 +159,7 @@ def run(prompt, n_prompt):
                 new_first_dim = min(latents.size(0), num_images_per_prompt)
                 
                 latents = latents[:new_first_dim]   
+
                 prompt_embeds = prompt_embeds[:new_first_dim*2]
                 # print("new", latents.shape, prompt_embeds.shape, new_first_dim)
 

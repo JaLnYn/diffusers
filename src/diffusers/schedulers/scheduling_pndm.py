@@ -377,6 +377,10 @@ class PNDMScheduler(SchedulerMixin, ConfigMixin):
         elif len(self.ets) == 2:
             model_output = (3 * self.ets[-1] - self.ets[-2]) / 2
         elif len(self.ets) == 3:
+            if self.ets[-3].shape != self.ets[-1].shape:
+                self.ets[-3] = self.ets[-3].repeat(8, 1, 1, 1)
+                self.ets[-2] = self.ets[-2].repeat(2, 1, 1, 1)
+            print(self.ets[-1].shape, self.ets[-2].shape, self.ets[-3].shape)
             model_output = (23 * self.ets[-1] - 16 * self.ets[-2] + 5 * self.ets[-3]) / 12
         else:
             model_output = (1 / 24) * (55 * self.ets[-1] - 59 * self.ets[-2] + 37 * self.ets[-3] - 9 * self.ets[-4])
@@ -434,6 +438,7 @@ class PNDMScheduler(SchedulerMixin, ConfigMixin):
         # Note: (α_(t−δ) - α_t) / (sqrt(α_t) * (sqrt(α_(t−δ)) + sqr(α_t))) =
         # sqrt(α_(t−δ)) / sqrt(α_t))
         sample_coeff = (alpha_prod_t_prev / alpha_prod_t) ** (0.5)
+        print(sample_coeff )
 
         # corresponds to denominator of e_θ(x_t, t) in formula (9)
         model_output_denom_coeff = alpha_prod_t * beta_prod_t_prev ** (0.5) + (
@@ -444,8 +449,10 @@ class PNDMScheduler(SchedulerMixin, ConfigMixin):
         prev_sample = (
             sample_coeff * sample - (alpha_prod_t_prev - alpha_prod_t) * model_output / model_output_denom_coeff
         )
-
+        print("c:", sample_coeff, (alpha_prod_t_prev - alpha_prod_t) / model_output_denom_coeff)
+                
         return prev_sample
+
 
     # Copied from diffusers.schedulers.scheduling_ddpm.DDPMScheduler.add_noise
     def add_noise(

@@ -1,43 +1,19 @@
-from diffusers import StableDiffusionPipeline
+from diffusers import DiffusionPipeline
 import torch
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from pathlib import Path
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 Path("./images/parallel").mkdir(parents=True, exist_ok=True)
 
 torch.manual_seed(0)
 
-model_id = "runwayml/stable-diffusion-v1-5"
-pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+pipe = DiffusionPipeline.from_pretrained("SimianLuo/LCM_Dreamshaper_v7")
 pipe = pipe.to("cuda")
+
+noise_level = 1
 
 @torch.no_grad()
 def run(prompt, n_prompt):
-
-    # adding noise based on the plms 
-    def add_noise(scheduler, sample, timestep, noise):
-
-        prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
-
-        alpha_prod_t = scheduler.alphas_cumprod[timestep]
-        alpha_prod_t_prev = scheduler.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else scheduler.final_alpha_cumprod
-
-        beta_prod_t = 1 - alpha_prod_t
-        beta_prod_t_prev = 1 - alpha_prod_t_prev
-
-        sample_coeff = (alpha_prod_t_prev / alpha_prod_t) ** (0.5)
-
-        # corresponds to denominator of e_θ(x_t, t) in formula (9)
-        model_output_denom_coeff = alpha_prod_t * beta_prod_t_prev ** (0.5) + (
-            alpha_prod_t * beta_prod_t * alpha_prod_t_prev
-        ) ** (0.5)
-
-        # full formula (9)
-        prev_sample = (
-            sample + 0.1*(alpha_prod_t_prev - alpha_prod_t) * noise / model_output_denom_coeff
-        )
-
-        return prev_sample
-
     batch_size = 1
     num_images_per_prompt = 8
     width = pipe.unet.config.sample_size * pipe.vae_scale_factor
@@ -46,7 +22,6 @@ def run(prompt, n_prompt):
     num_inference_steps = 16
     output_type = "pil"
     pipe._guidance_scale = 7.5
-
 
     pipe.check_inputs(
         prompt,
@@ -98,7 +73,6 @@ def run(prompt, n_prompt):
         prompt_embeds.dtype,
         device,
         None,
-        None,
     )
 
     pipe.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -121,7 +95,7 @@ def run(prompt, n_prompt):
             # predict the noise residual
             noise_pred = pipe.unet(
                 latent_model_input,
-                t,
+                t+1,
                 encoder_hidden_states=prompt_embeds,
                 timestep_cond=None,
                 cross_attention_kwargs=None,
@@ -129,26 +103,15 @@ def run(prompt, n_prompt):
                 return_dict=False,
             )[0]
 
+            print(t)
+
             print("there")
             # perform guidance
             if pipe.do_classifier_free_guidance:
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                 noise_pred = noise_pred_uncond + pipe.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-
-            latents = add_noise(pipe.scheduler, latents, t, pipe.prepare_latents(
-                latents.size(0),
-                pipe.unet.config.in_channels,
-                height,
-                width,
-                prompt_embeds.dtype,
-                device,
-                None,
-                None,
-            ))
-
             latents = pipe.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
-
 
             if latents.size(0) < num_images_per_prompt:
                 print(latents.shape, prompt_embeds.shape, num_images_per_prompt)

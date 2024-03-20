@@ -26,6 +26,7 @@ except OptionalDependencyNotAvailable:
     _dummy_objects.update(get_objects_from_module(dummy_torch_and_transformers_objects))
 else:
     _import_structure["pipeline_stable_diffusion_xl"] = ["StableDiffusionXLPipeline"]
+    _import_structure["pipeline_stable_diffusion_xl_fast"] = ["StableDiffusionXLPipelineFast"]
     _import_structure["pipeline_stable_diffusion_xl_img2img"] = ["StableDiffusionXLImg2ImgPipeline"]
     _import_structure["pipeline_stable_diffusion_xl_inpaint"] = ["StableDiffusionXLInpaintPipeline"]
     _import_structure["pipeline_stable_diffusion_xl_instruct_pix2pix"] = ["StableDiffusionXLInstructPix2PixPipeline"]
@@ -45,6 +46,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from ...utils.dummy_torch_and_transformers_objects import *  # noqa F403
     else:
         from .pipeline_stable_diffusion_xl import StableDiffusionXLPipeline
+        from .pipeline_stable_diffusion_xl_fast import StableDiffusionXLPipelineFast
         from .pipeline_stable_diffusion_xl_img2img import StableDiffusionXLImg2ImgPipeline
         from .pipeline_stable_diffusion_xl_inpaint import StableDiffusionXLInpaintPipeline
         from .pipeline_stable_diffusion_xl_instruct_pix2pix import StableDiffusionXLInstructPix2PixPipeline

@@ -1223,6 +1223,9 @@ class StableDiffusionXLPipelineFast(
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
+        print(latents)
+        print("==========================")
+
         if not output_type == "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16
             needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast

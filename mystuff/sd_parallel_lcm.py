@@ -20,7 +20,7 @@ generator = torch.manual_seed(0)
 print(type(pipe))
 
 images = pipe(
-    prompt=prompt, num_inference_steps=4, generator=generator, guidance_scale=8.0, num_images_per_prompt=8
+    prompt=prompt, num_inference_steps=4, generator=generator, guidance_scale=8.0, num_images_per_prompt=1
 ).images
 
 counter = 0

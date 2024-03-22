@@ -1223,8 +1223,8 @@ class StableDiffusionXLPipelineFast(
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        print(latents)
-        print("==========================")
+        #print(latents)
+        # print("==========================")
 
         if not output_type == "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16

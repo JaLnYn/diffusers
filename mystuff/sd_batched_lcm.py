@@ -6,6 +6,7 @@ import torch
 @torch.no_grad()
 def latents_to_images(pipe, latents):
     needs_upcasting = pipe.vae.dtype == torch.float16 and pipe.vae.config.force_upcast
+    del pipe.unet
 
     if needs_upcasting:
         pipe.upcast_vae()
@@ -23,21 +24,25 @@ def latents_to_images(pipe, latents):
         latents = latents * latents_std / pipe.vae.config.scaling_factor + latents_mean
     else:
         latents = latents / pipe.vae.config.scaling_factor
-
-
+    
     print(latents.shape)
 
     counter = 0
+    # for i in range(latents.shape[0]):
+    #     l = latents[i].unsqueeze(0)
+    #     print(l.shape)
+    #     image = pipe.vae.decode(latents, return_dict=False)[0]
+    #     image = pipe.image_processor.postprocess(image, output_type="pil")
+    #     image[0].save("./images/parallel/astronaut_rides_horse{}.png".format(counter))
+    #     counter += 1
+    #     del image
+    #     del l
+
+    print(latents.shape[0])
     for i in range(latents.shape[0]):
-
-        l = latents[i].unsqueeze(0)
-
-        print(l.shape)
-
-        image = pipe.vae.decode(latents, return_dict=False)[0]
-
+        print("decoding image {}".format(i))
+        image = pipe.vae.decode(latents[i].unsqueeze(0), return_dict=False)[0]
         image = pipe.image_processor.postprocess(image, output_type="pil")
-
         image[0].save("./images/parallel/astronaut_rides_horse{}.png".format(counter))
         counter += 1
 
@@ -49,6 +54,7 @@ unet = UNet2DConditionModel.from_pretrained(
     torch_dtype=torch.float16,
     variant="fp16",
 )
+
 pipe = StableDiffusionXLPipelineFast.from_pretrained(
     "stabilityai/stable-diffusion-xl-base-1.0", unet=unet, torch_dtype=torch.float16
 ).to("cuda")
@@ -62,9 +68,9 @@ generator = torch.manual_seed(0)
 print(type(pipe))
 
 latents = pipe(
-    prompt=prompt, num_inference_steps=4, generator=generator, guidance_scale=8.0, num_images_per_prompt=1, output_type="latent"
+    prompt=prompt, num_inference_steps=4, generator=generator, guidance_scale=8.0, num_images_per_prompt=8, output_type="latent"
 , return_dict=False)[0]
-print("a", latents)
+#print("a", latents)
 
 latents_to_images(pipe, latents)
 

@@ -73,7 +73,7 @@ unet = UNet2DConditionModel.from_pretrained(
 )
 
 pipe = StableDiffusionXLPipelineFast.from_pretrained(
-    "stabilityai/stable-diffusion-xl-base-1.0", unet=unet, torch_dtype=torch.float8
+    "stabilityai/stable-diffusion-xl-base-1.0", unet=unet, torch_dtype=torch.float16
 ).to("cuda")
 
 pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)

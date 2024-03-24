@@ -1184,6 +1184,7 @@ class StableDiffusionXLPipelineFast(
                     added_cond_kwargs=added_cond_kwargs,
                     return_dict=False,
                 )[0]
+                self.noise_pred = noise_pred
 
                 # perform guidance
                 if self.do_classifier_free_guidance:

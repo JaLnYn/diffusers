@@ -2,21 +2,19 @@ from diffusers import DiffusionPipeline, UNet2DConditionModel, LCMScheduler
 from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineFast
 import torch
 from functools import partial
-
 def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images):
     latents = callback_kwargs["latents"]
 
     batch_size = latents.shape[0]
     others = {}
     if batch_size < max_images:
+        print("batch_size: {}".format(batch_size))
         # TODO: Prohibit cloning and perturbing at the very last iteration
         print(f"End of iteration {i}: Current batch size is {batch_size}, doubling the batch size to {batch_size * 2}")
         latents = latents.repeat(2, 1, 1, 1)
         others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
 
-        for j in range(batch_size, batch_size * 2):
-            print(f"End of iteration {i}: Peturbing the latents in batch dimension {j}")
-            latents[j] = latents[j] + torch.randn_like(latents[j]) * 0.1
+        latents = latents + torch.randn_like(latents) * 0.1
 
     return {"latents": latents, **others}
 
@@ -60,7 +58,7 @@ def latents_to_images(pipe, latents):
         print("decoding image {}".format(i))
         image = pipe.vae.decode(latents[i].unsqueeze(0), return_dict=False)[0]
         image = pipe.image_processor.postprocess(image, output_type="pil")
-        image[0].save("./images/parallel/astronaut_rides_horse{}.png".format(counter))
+        image[0].save("./images/batched/astronaut_rides_horse{}.png".format(counter))
         counter += 1
 
     if needs_upcasting:

@@ -3,7 +3,7 @@ from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineFas
 import torch
 from functools import partial
 
-def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images):
+def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images, mode="gaussian"):
     latents = callback_kwargs["latents"]
 
     batch_size = latents.shape[0]
@@ -15,7 +15,17 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images):
         latents = latents.repeat(2, 1, 1, 1)
         others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
 
-        latents = latents + torch.randn_like(latents) * 0.1
+        if mode == "guassian":
+            latents = latents + torch.randn_like(latents) * 0.1
+        elif mode == "amp":
+            print("pipeline size:", pipeline.noise_pred.shape)
+            print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
+            if batch_size > 1:
+                noise_diff = pipeline.noise_pred[:batch_size//2] -  pipeline.noise_pred[batch_size//2:]
+                latents[:batch_size] += noise_diff.repeat(2, 1, 1, 1)
+                latents[batch_size:] -= noise_diff.repeat(2, 1, 1, 1)
+            latents = latents + torch.randn_like(latents) * 0.1
+
 
     return {"latents": latents, **others}
 
@@ -59,7 +69,7 @@ def latents_to_images(pipe, latents):
         print("decoding image {}".format(i))
         image = pipe.vae.decode(latents[i].unsqueeze(0), return_dict=False)[0]
         image = pipe.image_processor.postprocess(image, output_type="pil")
-        image[0].save("./images/parallel/astronaut_rides_horse{}.png".format(counter))
+        image[0].save("./images/parallel_amp/astronaut_rides_horse{}.png".format(counter))
         counter += 1
 
     if needs_upcasting:
@@ -83,11 +93,14 @@ generator = torch.manual_seed(0)
 
 print(type(pipe))
 
+mode = "amp" #gaussian
+
+
 latents = pipe(
     prompt=prompt, num_inference_steps=4, generator=generator, 
     guidance_scale=8.0, num_images_per_prompt=1, output_type="latent",
     return_dict=False,
-    callback_on_step_end=partial(perturb_latents_callback, step=1, max_images=8), 
+    callback_on_step_end=partial(perturb_latents_callback, step=1, max_images=8, mode=mode), 
     callback_on_step_end_tensor_inputs=pipe._callback_tensor_inputs
 )[0]
 #print("a", latents)

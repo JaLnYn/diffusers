@@ -8,23 +8,28 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images, 
 
     batch_size = latents.shape[0]
     others = {}
-    if batch_size < max_images:
-        print("batch_size: {}".format(batch_size))
-        # TODO: Prohibit cloning and perturbing at the very last iteration
-        print(f"End of iteration {i}: Current batch size is {batch_size}, doubling the batch size to {batch_size * 2}")
-        latents = latents.repeat(2, 1, 1, 1)
-        others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
 
-        if mode == "guassian":
-            latents = latents + torch.randn_like(latents) * 0.1
-        elif mode == "amp":
+    print(step)
+    if batch_size < 1: 
+        if mode == "amp":
             print("pipeline size:", pipeline.noise_pred.shape)
             print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
             if batch_size > 1:
                 noise_diff = pipeline.noise_pred[:batch_size//2] -  pipeline.noise_pred[batch_size//2:]
-                latents[:batch_size] += noise_diff.repeat(2, 1, 1, 1)
-                latents[batch_size:] -= noise_diff.repeat(2, 1, 1, 1)
-            latents = latents + torch.randn_like(latents) * 0.1
+                print( "Here: ",batch_size)
+                latents[:batch_size//2] += noise_diff
+                latents[batch_size//2:] -= noise_diff
+    if batch_size < max_images:
+        print("batch_size: {}".format(batch_size))
+        # TODO: Prohibit cloning and perturbing at the very last iteration
+        print(f"End of iteration {i}: Current batch size is {batch_size}, doubling the batch size to {batch_size * 2}")
+        latents = torch.repeat_interleave(latents, 2, dim=0)
+        others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
+
+    if batch_size < max_images: 
+        print("step: ", step)
+        latents = latents + torch.randn_like(latents) * (0.5**batch_size)
+        
 
 
     return {"latents": latents, **others}
@@ -66,7 +71,7 @@ def latents_to_images(pipe, latents):
 
     print(latents.shape[0])
     for i in range(latents.shape[0]):
-        print("decoding image {}".format(i))
+        print("decoding image {} saving to ./images/parallel_amp/".format(i))
         image = pipe.vae.decode(latents[i].unsqueeze(0), return_dict=False)[0]
         image = pipe.image_processor.postprocess(image, output_type="pil")
         image[0].save("./images/parallel_amp/astronaut_rides_horse{}.png".format(counter))

@@ -9,7 +9,6 @@ from typing import Any, List, Type
 import PIL
 import simple_parsing
 import torch
-import wandb
 from natsort import natsorted
 from simple_parsing import Serializable
 from simple_parsing.helpers import list_field
@@ -17,8 +16,10 @@ from simple_parsing.helpers.serialization import save as sp_save
 from torch.distributions import Uniform
 from tqdm import tqdm
 
+import wandb
 from diffusers import DiffusionPipeline
 from diffusers.utils.testing_utils import enable_full_determinism
+
 
 def _save_images_helper(images, output_dir: Path):
     os.makedirs(output_dir, exist_ok=True)
@@ -130,15 +131,15 @@ class LCM_SDXL_DiffusionModel(DiffusionModel):
     config: LCM_SDXL_DiffusionModelConfig
 
     def _run_inference(self, callback_func) -> List[PIL.Image.Image]:
-        from diffusers import LCMScheduler, UNet2DConditionModel
-        from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineFast
+        from diffusers import LCMScheduler, UNet2DConditionModel, StableDiffusionXLPipeline
+        # from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineFast
 
         unet = UNet2DConditionModel.from_pretrained(
             "latent-consistency/lcm-sdxl",
             torch_dtype=torch.float16,
             variant="fp16",
         )
-        pipe = StableDiffusionXLPipelineFast.from_pretrained(
+        pipe = StableDiffusionXLPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0", unet=unet, torch_dtype=torch.float16
         ).to("cuda")
         pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
@@ -397,7 +398,7 @@ class RandomNoiseCallback(Callback):
 class ExperimentConfig(Serializable):
     seed: int = 0
     """Random seed to use for reproducibility."""
-    use_wandb: bool = simple_parsing.flag(default=True, negative_option="--disable_wandb")
+    use_wandb: bool = simple_parsing.flag(default=False, negative_option="--disable_wandb")
     """Whether to use wandb or not."""
     wandb_offline: bool = simple_parsing.flag(default=False, negative_option="--no_wandb_offline")
     """Whether to use wandb in offline mode or not."""

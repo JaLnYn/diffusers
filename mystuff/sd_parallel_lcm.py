@@ -3,22 +3,32 @@ from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineFas
 import torch
 from functools import partial
 
-def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images, mode="gaussian"):
+def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_images, mode="gaussian"):
     latents = callback_kwargs["latents"]
 
     batch_size = latents.shape[0]
     others = {}
 
-    print(step)
-    if batch_size < 1: 
-        if mode == "amp":
-            print("pipeline size:", pipeline.noise_pred.shape)
-            print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
-            if batch_size > 1:
-                noise_diff = pipeline.noise_pred[:batch_size//2] -  pipeline.noise_pred[batch_size//2:]
-                print( "Here: ",batch_size)
-                latents[:batch_size//2] += noise_diff
-                latents[batch_size//2:] -= noise_diff
+    print(i)
+    if mode == "amp_adv":
+        if batch_size > 1:
+            avg_noise = pipeline.noise_pred.mean(dim=(1, 2, 3), keepdim=True)
+            latents += (pipeline.noise_pred - avg_noise )*(0.5**i)
+    # if mode == "amp_adv":
+    #    print("pipeline size:", pipeline.noise_pred.shape)
+    #    print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
+    #    if batch_size > 1:
+    #        avg_matrix = latents.mean(dim=(1, 2, 3), keepdim=True)
+    #        latents = 2*latents - avg_matrix
+
+    if mode == "amp":
+        print("pipeline size:", pipeline.noise_pred.shape)
+        print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
+        if batch_size > 1:
+            noise_diff = pipeline.noise_pred[:batch_size//2] -  pipeline.noise_pred[batch_size//2:]
+            print( "Here: ",batch_size)
+            latents[:batch_size//2] += noise_diff
+            latents[batch_size//2:] -= noise_diff
     if batch_size < max_images:
         print("batch_size: {}".format(batch_size))
         # TODO: Prohibit cloning and perturbing at the very last iteration
@@ -26,9 +36,9 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, step, max_images, 
         latents = torch.repeat_interleave(latents, 2, dim=0)
         others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
 
-    if batch_size < max_images: 
-        print("step: ", step)
-        latents = latents + torch.randn_like(latents) * (0.5**batch_size)
+    if i < max_steps: 
+        print("step: ", max_steps)
+        latents = latents + torch.randn_like(latents) * (0.5**i)
         
 
 
@@ -98,14 +108,15 @@ generator = torch.manual_seed(0)
 
 print(type(pipe))
 
-mode = "amp" #gaussian
+mode = "amp_adv" #gaussian
 
+max_steps = 4
 
 latents = pipe(
-    prompt=prompt, num_inference_steps=4, generator=generator, 
+    prompt=prompt, num_inference_steps=max_steps, generator=generator, 
     guidance_scale=8.0, num_images_per_prompt=1, output_type="latent",
     return_dict=False,
-    callback_on_step_end=partial(perturb_latents_callback, step=1, max_images=8, mode=mode), 
+    callback_on_step_end=partial(perturb_latents_callback, max_steps=max_steps, max_images=8, mode=mode), 
     callback_on_step_end_tensor_inputs=pipe._callback_tensor_inputs
 )[0]
 #print("a", latents)

@@ -8,15 +8,23 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_ima
 
     batch_size = latents.shape[0]
     others = {}
+    noise_const = 0.2
+    cooldown_const = 2
 
     print(i)
     if mode == "amp_adv":
-        if batch_size > 1:
+        print(max_steps)
+        if batch_size > 1 and i < max_steps - cooldown_const:
             avg_noise = pipeline.noise_pred.mean(dim=(1, 2, 3), keepdim=True)
-            new_noise = (pipeline.noise_pred - avg_noise )*(0.1**i)
-            latents = 
+            scheduler = pipeline.scheduler
+            alph = scheduler.alphas_cumprod[t]
+            beta = 1 - alph
+            new_noise = (pipeline.noise_pred - avg_noise )*(noise_const*beta.sqrt())
+            latents += new_noise
+        else: 
+           print("done")
+            
 
-            c_skip, c_out = self.get_scalings_for_boundary_condition_discrete(timestep)
     # if mode == "amp_adv":
     #    print("pipeline size:", pipeline.noise_pred.shape)
     #    print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))
@@ -40,9 +48,9 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_ima
         latents = torch.repeat_interleave(latents, 2, dim=0)
         others = {key: torch.cat([value] * 2) for key, value in callback_kwargs.items() if value is not None}
 
-    if i < max_steps: 
+    if i < max_steps - cooldown_const: 
         print("step: ", max_steps)
-        latents = latents + torch.randn_like(latents) * (0.5**i)
+        latents = latents + torch.randn_like(latents) * (noise_const)
 
     return {"latents": latents, **others}
 
@@ -84,7 +92,6 @@ def latents_to_images(pipe, latents):
     if needs_upcasting:
         pipe.vae.to(dtype=torch.float16)
 
-max_steps = 0
 
 unet = UNet2DConditionModel.from_pretrained(
     "latent-consistency/lcm-sdxl",
@@ -106,7 +113,7 @@ print(type(pipe))
 
 mode = "amp_adv" #gaussian
 
-max_steps = 4
+max_steps = 6
 
 latents = pipe(
     prompt=prompt, num_inference_steps=max_steps, generator=generator, 

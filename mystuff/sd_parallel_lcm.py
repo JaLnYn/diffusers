@@ -32,6 +32,7 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_ima
             print( "Here: ",batch_size)
             latents[:batch_size//2] += noise_diff
             latents[batch_size//2:] -= noise_diff
+
     if batch_size < max_images:
         print("batch_size: {}".format(batch_size))
         # TODO: Prohibit cloning and perturbing at the very last iteration
@@ -42,8 +43,6 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_ima
     if i < max_steps: 
         print("step: ", max_steps)
         latents = latents + torch.randn_like(latents) * (0.5**i)
-        
-
 
     return {"latents": latents, **others}
 
@@ -58,16 +57,8 @@ def latents_to_images(pipe, latents):
 
     has_latents_mean = hasattr(pipe.vae.config, "latents_mean") and pipe.vae.config.latents_mean is not None
     has_latents_std = hasattr(pipe.vae.config, "latents_std") and pipe.vae.config.latents_std is not None
-    if has_latents_mean and has_latents_std:
-        latents_mean = (
-            torch.tensor(pipe.vae.config.latents_mean).view(1, 4, 1, 1).to(l.device, l.dtype)
-        )
-        latents_std = (
-            torch.tensor(pipe.vae.config.latents_std).view(1, 4, 1, 1).to(l.device, l.dtype)
-        )
-        latents = latents * latents_std / pipe.vae.config.scaling_factor + latents_mean
-    else:
-        latents = latents / pipe.vae.config.scaling_factor
+
+    latents = latents / pipe.vae.config.scaling_factor
     
     print(latents.shape)
 
@@ -92,6 +83,8 @@ def latents_to_images(pipe, latents):
 
     if needs_upcasting:
         pipe.vae.to(dtype=torch.float16)
+
+max_steps = 0
 
 unet = UNet2DConditionModel.from_pretrained(
     "latent-consistency/lcm-sdxl",

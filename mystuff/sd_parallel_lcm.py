@@ -13,7 +13,10 @@ def perturb_latents_callback(pipeline, i, t, callback_kwargs, max_steps, max_ima
     if mode == "amp_adv":
         if batch_size > 1:
             avg_noise = pipeline.noise_pred.mean(dim=(1, 2, 3), keepdim=True)
-            latents += (pipeline.noise_pred - avg_noise )*(0.5**i)
+            new_noise = (pipeline.noise_pred - avg_noise )*(0.1**i)
+            latents = 
+
+            c_skip, c_out = self.get_scalings_for_boundary_condition_discrete(timestep)
     # if mode == "amp_adv":
     #    print("pipeline size:", pipeline.noise_pred.shape)
     #    print("{} : {}".format( pipeline.noise_pred[:batch_size//2].shape, pipeline.noise_pred[batch_size//2:].shape))

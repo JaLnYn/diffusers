@@ -16,7 +16,7 @@ import html
 import inspect
 import re
 import urllib.parse as ul
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union, Dict
 
 import torch
 import torch.nn.functional as F
@@ -256,6 +256,15 @@ class PixArtAlphaPipeline(DiffusionPipeline):
 
     _optional_components = ["tokenizer", "text_encoder"]
     model_cpu_offload_seq = "text_encoder->transformer->vae"
+    _callback_tensor_inputs = [
+        "latents",
+        "prompt_embeds",
+        "prompt_attention_mask",
+        "negative_prompt_embeds",
+        "negative_prompt_attention_mask",
+        "resolution",
+        "aspect_ratio",
+    ]
 
     def __init__(
         self,
@@ -727,6 +736,8 @@ class PixArtAlphaPipeline(DiffusionPipeline):
         clean_caption: bool = True,
         use_resolution_binning: bool = True,
         max_sequence_length: int = 120,
+        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
+        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         **kwargs,
     ) -> Union[ImagePipelineOutput, Tuple]:
         """
@@ -950,8 +961,26 @@ class PixArtAlphaPipeline(DiffusionPipeline):
                 else:
                     noise_pred = noise_pred
 
+                self.noise_pred = noise_pred
                 # compute previous image: x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+                if callback_on_step_end is not None:
+                    callback_kwargs = {}
+                    for k in callback_on_step_end_tensor_inputs:
+                        callback_kwargs[k] = locals()[k]
+                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+
+                    latents = callback_outputs.get("latents", latents)
+                    prompt_embeds = callback_outputs.get("prompt_embeds", prompt_embeds)
+                    prompt_attention_mask = callback_outputs.get("prompt_attention_mask", prompt_attention_mask)
+                    negative_prompt_embeds = callback_outputs.get("negative_prompt_embeds", negative_prompt_embeds)
+                    negative_prompt_attention_mask = callback_outputs.get(
+                        "negative_prompt_attention_mask", negative_prompt_attention_mask
+                    )
+                    resolution = callback_outputs.get("resolution", resolution)
+                    aspect_ratio = callback_outputs.get("aspect_ratio", aspect_ratio)
+                    added_cond_kwargs = {"resolution": resolution, "aspect_ratio": aspect_ratio}
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):

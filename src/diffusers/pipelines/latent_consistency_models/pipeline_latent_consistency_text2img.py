@@ -846,6 +846,7 @@ class LatentConsistencyModelPipeline(
                     return_dict=False,
                 )[0]
 
+                self.noise_pred = model_pred
                 # compute the previous noisy sample x_t -> x_t-1
                 latents, denoised = self.scheduler.step(model_pred, t, latents, **extra_step_kwargs, return_dict=False)
                 if callback_on_step_end is not None:

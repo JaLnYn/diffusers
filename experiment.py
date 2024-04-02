@@ -359,7 +359,7 @@ class SD_1_5_LCM_ControlNetConfig(DiffusionModelConfig):
     prompt: str = "the mona lisa"
     controlnet_image: str = "https://hf.co/datasets/huggingface/documentation-images/resolve/main/diffusers/input_image_vermeer.png"
     num_inference_steps: int = 4
-    guidance_scale: float = 1.5
+    guidance_scale: float = 0.5
     controlnet_conditioning_scale: float = 0.8
     cross_attention_scale: float = 1.0
     num_images_per_prompt: int = 1
@@ -394,7 +394,8 @@ class SD_1_5_LCM_ControlNet(DiffusionModel):
         if self.config.precision == "fp16":
             controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=torch.float16)
             pipe = StableDiffusionControlNetPipeline.from_pretrained(
-                "runwayml/stable-diffusion-v1-5",
+                # "runwayml/stable-diffusion-v1-5",
+                "lykon/dreamshaper-7",
                 controlnet=controlnet,
                 torch_dtype=torch.float16,
                 variant="fp16"
@@ -402,7 +403,8 @@ class SD_1_5_LCM_ControlNet(DiffusionModel):
         elif self.config.precision == "fp32":
             controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=torch.float32)
             pipe = StableDiffusionControlNetPipeline.from_pretrained(
-                "runwayml/stable-diffusion-v1-5",
+                # "runwayml/stable-diffusion-v1-5",
+                "lykon/dreamshaper-7",
                 controlnet=controlnet,
                 torch_dtype=torch.float32,
             )
@@ -421,6 +423,7 @@ class SD_1_5_LCM_ControlNet(DiffusionModel):
         images = pipe(
             self.config.prompt,
             image=canny_image,
+            num_images_per_prompt=self.config.num_images_per_prompt,
             num_inference_steps=self.config.num_inference_steps,
             guidance_scale=self.config.guidance_scale,
             controlnet_conditioning_scale=self.config.controlnet_conditioning_scale,

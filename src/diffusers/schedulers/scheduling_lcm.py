@@ -575,13 +575,15 @@ class LCMScheduler(SchedulerMixin, ConfigMixin):
         # 7. Sample and inject noise z ~ N(0, I) for MultiStep Inference
         # Noise is not used on the final timestep of the timestep schedule.
         # This also means that noise is not used for one-step sampling.
-        if self.step_index != self.num_inference_steps - 1:
-            noise = randn_tensor(
-                model_output.shape, generator=generator, device=model_output.device, dtype=denoised.dtype
-            )
-            prev_sample = alpha_prod_t_prev.sqrt() * denoised + beta_prod_t_prev.sqrt() * noise
-        else:
-            prev_sample = denoised
+        print("here helloc")
+        # if self.step_index != self.num_inference_steps - 1:
+        #     noise = randn_tensor(
+        #         model_output.shape, generator=generator, device=model_output.device, dtype=denoised.dtype
+        #     )
+        #     prev_sample = alpha_prod_t_prev.sqrt() * denoised + beta_prod_t_prev.sqrt() * noise
+        # else:
+        #     prev_sample = denoised
+        prev_sample = denoised
 
         # upon completion increase step index by one
         self._step_index += 1

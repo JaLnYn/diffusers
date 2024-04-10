@@ -169,6 +169,9 @@ class LCM_SDXL_DiffusionModel(DiffusionModel):
         elif self.config.device == "cpu":
             pipe.to("cpu")
 
+
+        pipe.enable_model_cpu_offload() # This does pipe.to("cuda") inside
+
         # Always enable slicing (one-by-one latents decoding) no matter the device to ensure fairness in benchmarking
         pipe.enable_vae_slicing()
 

@@ -1,4 +1,5 @@
 import cv2
+import os
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 import imagehash
@@ -29,43 +30,88 @@ def compute_ahash(image_path):
     h = imagehash.average_hash(image)
     return h
 
-# List of image paths
-image_paths = [f'images/3{i}.png' for i in range(0, 7 )]
-print(f"running numbers on {image_paths}")
-num_images = len(image_paths)
+base_path = './experiment_runs'
 
-# Initialize sums
-total_mse = 0
-total_ssim = 0
-total_sift_matches = 0
-ahash_distances = []
+category_paths = {
+    "sdxl_dummy_callback_baseline": [],
+    "sdxl_cloning_only": [],
+    "sdxl_random_noise": [],
+    "sdxl_away_from_average": [],
+    "sdxl_modify_colors": [],
+    "sdxl_away_plus_colors": [],
+}
 
-# Compare each pair of images
-for i in range(num_images):
-    for j in range(i + 1, num_images):
-        img1 = cv2.imread(image_paths[i], cv2.IMREAD_GRAYSCALE)
-        img2 = cv2.imread(image_paths[j], cv2.IMREAD_GRAYSCALE)
+for folder in os.listdir(base_path):
+    my_type = folder.split("-")[4]
 
-        total_mse += mse(img1, img2)
-        total_ssim += ssim(img1, img2)
+    # List of image paths
+    image_paths = [f'{base_path}/{folder}/final/images_{i}.png' for i in range(0, 8 )]
+    print(f"running numbers on {image_paths}")
+    num_images = len(image_paths)
 
-        img1_color = cv2.imread(image_paths[i])
-        img2_color = cv2.imread(image_paths[j])
-        total_sift_matches += compute_sift_matches(img1_color, img2_color)
+    # Initialize sums
+    total_mse = 0
+    total_ssim = 0
+    total_sift_matches = 0
+    ahash_distances = []
 
-        # aHash comparison
-        hash1 = compute_ahash(image_paths[i])
-        hash2 = compute_ahash(image_paths[j])
-        ahash_distances.append(hash1 - hash2)
+    # Compare each pair of images
+    for i in range(num_images):
+        for j in range(i + 1, num_images):
+            img1 = cv2.imread(image_paths[i], cv2.IMREAD_GRAYSCALE)
+            img2 = cv2.imread(image_paths[j], cv2.IMREAD_GRAYSCALE)
 
-# Compute averages
-avg_mse = total_mse / (num_images * (num_images - 1) / 2)
-avg_ssim = total_ssim / (num_images * (num_images - 1) / 2)
-avg_sift_matches = total_sift_matches / (num_images * (num_images - 1) / 2)
-avg_ahash_distance = np.mean(ahash_distances)
+            total_mse += mse(img1, img2)
+            total_ssim += ssim(img1, img2)
 
-print(f"Average MSE: {avg_mse}")
-print(f"Average SSIM: {avg_ssim}")
-print(f"Average SIFT matches: {avg_sift_matches}")
-print(f"Average aHash distance: {avg_ahash_distance}")
+            img1_color = cv2.imread(image_paths[i])
+            img2_color = cv2.imread(image_paths[j])
+            total_sift_matches += compute_sift_matches(img1_color, img2_color)
+
+            # aHash comparison
+            hash1 = compute_ahash(image_paths[i])
+            hash2 = compute_ahash(image_paths[j])
+            ahash_distances.append(hash1 - hash2)
+
+    # Compute averages
+    avg_mse = total_mse / (num_images * (num_images - 1) / 2)
+    avg_ssim = total_ssim / (num_images * (num_images - 1) / 2)
+    avg_sift_matches = total_sift_matches / (num_images * (num_images - 1) / 2)
+    avg_ahash_distance = np.mean(ahash_distances)
+
+    # print(f"Average MSE: {avg_mse}")
+    # print(f"Average SSIM: {avg_ssim}")
+    # print(f"Average SIFT matches: {avg_sift_matches}")
+    # print(f"Average aHash distance: {avg_ahash_distance}")
+    category_paths[my_type].append([avg_mse, avg_ssim, avg_sift_matches, avg_ahash_distance])
+
+
+my_type_to_avg = {
+    "sdxl_dummy_callback_baseline": [],
+    "sdxl_cloning_only": [],
+    "sdxl_random_noise": [],
+    "sdxl_away_from_average": [],
+    "sdxl_modify_colors": [],
+    "sdxl_away_plus_colors": [],
+}
+for my_type in category_paths.keys():
+    print(my_type, category_paths[my_type])
+    counter = 0
+    avg_avg = [0] * len(category_paths[my_type])
+    for i in category_paths[my_type]:
+        counter += 1
+        for j in range(len(i)):
+            avg_avg[j] += i[j]
+    for i in avg_avg:
+        my_type_to_avg[my_type].append(i/counter)
+        print(i/counter)
+    
+print(my_type_to_avg)
+
+
+
+
+
+
+
 

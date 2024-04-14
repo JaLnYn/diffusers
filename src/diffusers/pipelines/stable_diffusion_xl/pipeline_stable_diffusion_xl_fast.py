@@ -216,6 +216,7 @@ class StableDiffusionXLPipelineFast(
         "add_time_ids",
         "negative_pooled_prompt_embeds",
         "negative_add_time_ids",
+        "timestep_cond"
     ]
 
     def __init__(
@@ -1214,6 +1215,7 @@ class StableDiffusionXLPipelineFast(
                     )
                     add_time_ids = callback_outputs.pop("add_time_ids", add_time_ids)
                     negative_add_time_ids = callback_outputs.pop("negative_add_time_ids", negative_add_time_ids)
+                    timestep_cond = callback_outputs.pop("timestep_cond", timestep_cond)
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):

@@ -231,8 +231,6 @@ class LCM_Dreamshaper_DiffusionModelConfig(DiffusionModelConfig):
     num_inference_steps: int = 4
     guidance_scale: float = 0.5
     prompt: str = "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k"
-    # prompt: str = "(masterpiece), (extremely intricate:1.3),, (realistic), portrait of a girl, the most beautiful in the world, (medieval armor), metal reflections, upper body, outdoors, intense sunlight, far away castle, professional photograph of a stunning woman detailed, sharp focus, dramatic, award winning, cinematic lighting, octane render, unreal engine, volumetrics dtx, (film grain, bokeh, blurry foreground, blurry background), crest on chest"
-    # prompt: str = "close up Portrait photo of muscular bearded guy in a worn mech suit, ((light bokeh)), intricate, (steel metal [rust]), elegant, sharp focus, photo by greg rutkowski, soft lighting, vibrant colors, masterpiece, ((streets)), detailed face"
     num_images_per_prompt: int = 1
     precision: str = simple_parsing.choice("fp16", "fp32", default="fp16")
 
@@ -264,7 +262,7 @@ class LCM_Dreamshaper_DiffusionModel(DiffusionModel):
 
         pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
         pipe.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
-
+        pipe.safety_checker = None
         pipe = pipe.to(self.config.device)
 
         pipe.enable_vae_slicing()
@@ -869,7 +867,43 @@ class AwayFromAverageCallback(Callback):
             # print(f"End of iteration {i}, timestep {t}: Applying additional noise to latents with torch.randn_like() scaled by {noise_const=}.")
             latents = latents + torch.randn_like(latents) * (noise_const)
 
-        return outputs
+        if "latents" in outputs:
+            return outputs
+        else:
+            return {"latents": callback_kwargs["latents"]}
+
+# Shrinking towards the mean (will also remove outliers)
+def soft_clamp_tensor(input_tensor, threshold=3.5, boundary=4):
+    if max(abs(input_tensor.max()), abs(input_tensor.min())) < 4:
+        return input_tensor
+    channel_dim = 1
+
+    max_vals = input_tensor.max(channel_dim, keepdim=True)[0]
+    max_replace = ((input_tensor - threshold) / (max_vals - threshold)) * (boundary - threshold) + threshold
+    over_mask = (input_tensor > threshold)
+
+    min_vals = input_tensor.min(channel_dim, keepdim=True)[0]
+    min_replace = ((input_tensor + threshold) / (min_vals + threshold)) * (-boundary + threshold) - threshold
+    under_mask = (input_tensor < -threshold)
+
+    return torch.where(over_mask, max_replace, torch.where(under_mask, min_replace, input_tensor))
+
+# Center tensor (balance colors)
+def center_tensor(input_tensor, channel_shift=1, full_shift=1, channels=[0, 1, 2, 3]):
+    for channel in channels:
+        input_tensor[0, channel] -= input_tensor[0, channel].mean() * channel_shift
+    return input_tensor - input_tensor.mean() * full_shift
+
+
+# Maximize/normalize tensor
+def maximize_tensor(input_tensor, boundary=4, channels=[0, 1, 2]):
+    min_val = input_tensor.min()
+    max_val = input_tensor.max()
+
+    normalization_factor = boundary / max(abs(min_val), abs(max_val))
+    input_tensor[0, channels] *= normalization_factor
+
+    return input_tensor
 
 @dataclass(kw_only=True)
 class ModifyColorsCallbackConfig(CallbackConfig):
@@ -900,39 +934,6 @@ class ModifyColorsCallback(Callback):
         max_batch_size: int,
         cloning_mode: str,
     ) -> dict:
-
-        # Shrinking towards the mean (will also remove outliers)
-        def soft_clamp_tensor(input_tensor, threshold=3.5, boundary=4):
-            if max(abs(input_tensor.max()), abs(input_tensor.min())) < 4:
-                return input_tensor
-            channel_dim = 1
-
-            max_vals = input_tensor.max(channel_dim, keepdim=True)[0]
-            max_replace = ((input_tensor - threshold) / (max_vals - threshold)) * (boundary - threshold) + threshold
-            over_mask = (input_tensor > threshold)
-
-            min_vals = input_tensor.min(channel_dim, keepdim=True)[0]
-            min_replace = ((input_tensor + threshold) / (min_vals + threshold)) * (-boundary + threshold) - threshold
-            under_mask = (input_tensor < -threshold)
-
-            return torch.where(over_mask, max_replace, torch.where(under_mask, min_replace, input_tensor))
-
-        # Center tensor (balance colors)
-        def center_tensor(input_tensor, channel_shift=1, full_shift=1, channels=[0, 1, 2, 3]):
-            for channel in channels:
-                input_tensor[0, channel] -= input_tensor[0, channel].mean() * channel_shift
-            return input_tensor - input_tensor.mean() * full_shift
-
-
-        # Maximize/normalize tensor
-        def maximize_tensor(input_tensor, boundary=4, channels=[0, 1, 2]):
-            min_val = input_tensor.min()
-            max_val = input_tensor.max()
-
-            normalization_factor = boundary / max(abs(min_val), abs(max_val))
-            input_tensor[0, channels] *= normalization_factor
-
-            return input_tensor
 
 
         latents = callback_kwargs["latents"]
@@ -975,6 +976,99 @@ class ModifyColorsCallback(Callback):
         else:
             return {"latents": callback_kwargs["latents"]}
 
+@dataclass(kw_only=True)
+class AwayFromAveragePlusColorsCallbackConfig(BaseConfig):
+    _target: Type = sp_target(lambda: AwayFromAveragePlusColorsCallback)
+    max_batch_size: int
+    """Maximum batch size to reach with cloning."""
+    noise_const: float = 0.2
+    mode: str = simple_parsing.choice("amp_adv", "amp", default="amp_adv")
+    cooldown_steps: int = 2
+    max_steps: int = None
+    """Will be set automatically to the number of inference steps in the model config."""
+
+@dataclass
+class AwayFromAveragePlusColorsCallback(Callback):
+
+    config: AwayFromAveragePlusColorsCallbackConfig
+
+    def __call__(self):
+        return partial(
+            self.callback_func,
+            max_batch_size=self.config.max_batch_size,
+            noise_const=self.config.noise_const,
+            mode=self.config.mode,
+            max_steps=self.config.max_steps,
+            cooldown_steps=self.config.cooldown_steps
+        )
+
+    @staticmethod
+    def callback_func(
+        pipeline: DiffusionPipeline,
+        i: int,
+        t: int,
+        callback_kwargs: dict,
+        max_batch_size: int,
+        noise_const: float,
+        mode: str,
+        max_steps: int,
+        cooldown_steps: int
+    ) -> dict:
+        latents = callback_kwargs["latents"]
+
+        batch_size = latents.shape[0]
+        outputs = {}
+
+        if mode == "amp_adv":
+            if batch_size > 1 and i < max_steps - cooldown_steps:
+                # print(f"End of iteration {i}, timestep {t}: Applying new noise to latents under amp_adv mode.")
+                avg_noise = pipeline.noise_pred.mean(dim=(1, 2, 3), keepdim=True)
+                scheduler = pipeline.scheduler
+                alph = scheduler.alphas_cumprod[t]
+                beta = 1 - alph
+                new_noise = (pipeline.noise_pred - avg_noise )*(noise_const*beta.sqrt())
+                latents += new_noise
+        elif mode == "amp":
+            if batch_size > 1:
+                # print(f"End of iteration {i}, timestep {t}: Applying noise diff to latents under amp mode.")
+                noise_diff = pipeline.noise_pred[:batch_size//2] -  pipeline.noise_pred[batch_size//2:]
+                # print( "Here: ",batch_size)
+                latents[:batch_size//2] += noise_diff
+                latents[batch_size//2:] -= noise_diff
+
+        if batch_size < max_batch_size:
+            outputs, _ = _doubling_cloning_mode(callback_kwargs, batch_size, i, t, do_print=False, do_mask=False)
+            latents = outputs["latents"]
+
+        # Not going to bother optimizing this lol. We will only test results for this one, not speed. (Original code is slow too)
+        for batch in range(batch_size):
+            org_latents = outputs["latents"] if "latents" in outputs else callback_kwargs["latents"]
+            latents = org_latents[batch].unsqueeze(0)
+            if t > 950:
+                threshold = max(latents.max(), abs(latents.min())) * 0.998
+                print(
+                    f"End of iteration {i}, timestep {t}: Apply soft_clamp_tensor to latents with threshold {threshold}"
+                )
+                latents = soft_clamp_tensor(latents, threshold*0.998, threshold)
+            if t > 700:
+                print(
+                    f"End of iteration {i}, timestep {t}: Apply center_tensor to latents with channel_shift 0.8 and full_shift 0.8"
+                )
+                latents = center_tensor(latents, 0.8, 0.8)
+            if (1 < t < 100): 
+                #or (i == max_steps - 2): # This gives somewhat good results?
+                print(
+                    f"End of iteration {i}, timestep {t}: Apply center_tensor to latents with channel_shift 0.6 and full_shift 1.0, and maximize_tensor"
+                )
+                latents = center_tensor(latents, 0.6, 1.0)
+                latents = maximize_tensor(latents) # Increasing the boundary to 5 seems to increase constrast?
+
+            org_latents[batch] = latents.squeeze(0)
+
+        if "latents" in outputs:
+            return outputs
+        else:
+            return {"latents": callback_kwargs["latents"]}
 
 # ===========================================================
 # ======================== MAIN =============================
@@ -1014,6 +1108,7 @@ class ExperimentConfig(Serializable):
             "random_noise": RandomNoiseCallbackConfig,
             "away_from_average": AwayFromAverageCallbackConfig,
             "modify_colors": ModifyColorsCallbackConfig,
+            "away_plus_colors": AwayFromAveragePlusColorsCallbackConfig,
         },
         default="dummy_callback",
     )
@@ -1024,10 +1119,14 @@ class ExperimentConfig(Serializable):
     """Whether to run the experiment in benchmark mode or not. Will record timing statistics and other metrics, while disabling saving of images and other outputs."""
     benchmark_runs: int = 5
     """Number of runs to perform in benchmark mode before taking average. (There will always be one warmup run.)"""
+    wandb_name: str = "diffusion-experiments"
+    wandb_benchmark_name: str = "diffusion-benchmark"
 
     def __post_init__(self):
         # If callback is MoveAwayFromAverageCallback, set the max_steps to the number of inference steps
-        if isinstance(self.callback, AwayFromAverageCallbackConfig):
+        if (isinstance(self.callback, AwayFromAverageCallbackConfig)
+            or isinstance(self.callback, AwayFromAveragePlusColorsCallbackConfig)
+        ): 
             self.callback.max_steps = self.model.num_inference_steps
             print("Setting max_steps of callback to", self.model.num_inference_steps)
 
@@ -1074,7 +1173,7 @@ def main():
     if exp_config.use_wandb and not exp_config.benchmark_mode:
         # Start wandb for regular projects
         wandb.init(
-            project="diffusion",
+            project=f"{exp_config.wandb_name}",
             entity="kwand_jalnyn_csc2231",
             name=exp_id,
             config=exp_config.to_dict(save_dc_types=True),
@@ -1130,7 +1229,9 @@ def main():
     # Save the image results to a table and finish the wandb run
     if exp_config.use_wandb and not skip_saving:
         columns = ["exp_id", "model_config", "callback_config", "stage"]
-        for i in range(exp_config.callback.max_batch_size):
+
+        batch_size = getattr(exp_config.callback, "max_batch_size", exp_config.model.num_images_per_prompt)
+        for i in range(batch_size):
             columns.append(f"images_{i}")
 
         data = []
@@ -1163,7 +1264,7 @@ def main():
     # Create a seperate wandb project just to record benchmark timings
     if exp_config.benchmark_mode:
         wandb.init(
-            project="diffusion_benchmark2",
+            project=exp_config.wandb_benchmark_name,
             entity="kwand_jalnyn_csc2231",
             name=exp_id,
             config=exp_config.to_dict(save_dc_types=True),

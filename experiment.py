@@ -131,7 +131,7 @@ class DiffusionModel:
 class LCM_SDXL_DiffusionModelConfig(DiffusionModelConfig):
     _target: Type = sp_target(lambda: LCM_SDXL_DiffusionModel)
     num_inference_steps: int = 4
-    guidance_scale: float = 8.0
+    guidance_scale: float = 0.5
     prompt: str = "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k"
     num_images_per_prompt: int = 1
     precision: str = simple_parsing.choice("fp16", "fp32", default="fp16")
